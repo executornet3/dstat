@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Windy Dstat <3</title>
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'surface': '#121212',
+            'surface-light': '#1e1e1e',
+            'primary': '#10b981',
+            'primary-light': '#34d399',
+            'accent': '#6ee7b7',
+            'text-primary': '#f3f4f6',
+            'text-secondary': '#9ca3af',
+          },
+          boxShadow: {
+            'glow': '0 0 20px rgba(110, 231, 183, 0.15)',
+          }
+        },
+        fontFamily: {
+          'sans': ['Inter', 'sans-serif'],
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #121212;
+      color: #f3f4f6;
+      font-family: 'Inter', sans-serif;
+    }
+    .card {
+      background: rgba(30, 30, 30, 0.6);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.3s ease;
+    }
+    .card:hover {
+      box-shadow: 0 0 30px rgba(110, 231, 183, 0.1);
+      border: 1px solid rgba(110, 231, 183, 0.2);
+    }
+    .highcharts-background { fill: transparent; }
+    .highcharts-grid-line { stroke: rgba(255, 255, 255, 0.06); }
+    .highcharts-axis-line, .highcharts-tick { stroke: rgba(255, 255, 255, 0.1); }
+    .highcharts-title, .highcharts-axis-labels, .highcharts-legend-item text {
+      fill: #f3f4f6 !important;
+    }
+    .pulse {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .fade-in {
+      animation: fadeIn 0.5s ease-in;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .highlight-target {
+      background: linear-gradient(120deg, rgba(255, 235, 59, 0.25) 0%, rgba(255, 193, 7, 0.15) 100%);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 235, 59, 0.3);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+  <div class="w-full max-w-4xl fade-in">
+    <div class="flex flex-col md:flex-row items-center justify-between mb-6">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight text-text-primary">Unprotected Live Dstat</h1>
+        <p class="text-text-secondary mt-1">Target - <span id="target-link" class="highlight-target font-medium">dstats.qzz.io/hit</span></p>
+      </div>
+      <div class="flex items-center mt-4 md:mt-0">
+        <div class="flex items-center mr-4">
+          <span class="h-2 w-2 rounded-full bg-accent pulse mr-2"></span>
+          <span class="text-sm text-text-secondary">Live</span>
+        </div>
+        <div id="current-rps" class="text-2xl font-semibold text-accent">0 rps</div>
+      </div>
+    </div>
+
+    <div class="card rounded-2xl p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-medium text-text-primary">Requests Per Second</h2>
+        <div class="text-sm text-text-secondary" id="time-range">Last 60 seconds</div>
+      </div>
+      <div id="chart-container" class="rounded-xl overflow-hidden h-80"></div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="card rounded-xl p-5">
+        <div class="text-sm text-text-secondary mb-1">Average RPS</div>
+        <div id="avg-rps" class="text-2xl font-semibold text-text-primary">0</div>
+      </div>
+      <div class="card rounded-xl p-5">
+        <div class="text-sm text-text-secondary mb-1">Peak RPS</div>
+        <div id="peak-rps" class="text-2xl font-semibold text-text-primary">0</div>
+      </div>
+      <div class="card rounded-xl p-5">
+        <div class="text-sm text-text-secondary mb-1">Total Requests</div>
+        <div id="total-requests" class="text-2xl font-semibold text-text-primary">0</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let peakRps = 0;
+    let totalRequests = 0;
+    let rpsValues = [];
+    const maxDataPoints = 60;
+
+    const initialData = Array.from({ length: maxDataPoints }, (_, i) => {
+      const timestamp = Date.now() - (maxDataPoints - 1 - i) * 1000;
+      return [timestamp, 0];
+    });
+
+    Highcharts.setOptions({
+      colors: ['#10b981'],
+      chart: {
+        backgroundColor: 'transparent',
+        style: { fontFamily: 'Inter, sans-serif' },
+        animation: { duration: 500 }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(18, 18, 18, 0.85)',
+        borderWidth: 0,
+        borderRadius: 8,
+        shadow: true,
+        style: { color: '#f3f4f6' },
+        padding: 12
+      },
+      xAxis: {
+        type: 'datetime',
+        labels: {
+          formatter: function () {
+            return Highcharts.dateFormat('%H:%M:%S', this.value);
+          },
+          style: { color: '#9ca3af', fontSize: '11px', fontWeight: '500' }
+        },
+        title: { text: null },
+        crosshair: { color: 'rgba(110, 231, 183, 0.2)' }
+      },
+      yAxis: {
+        min: 0,
+        softMax: 100,
+        tickAmount: 5,
+        title: { text: null },
+        labels: { style: { color: '#9ca3af', fontSize: '11px', fontWeight: '500' } }
+      },
+      plotOptions: {
+        area: {
+          marker: { enabled: false },
+          fillColor: {
+            linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+            stops: [
+              [0, 'rgba(16, 185, 129, 0.25)'],
+              [0.5, 'rgba(16, 185, 129, 0.1)'],
+              [1, 'rgba(16, 185, 129, 0.0)']
+            ]
+          },
+          lineColor: '#10b981',
+          lineWidth: 2
+        }
+      },
+      credits: { enabled: false },
+      legend: { enabled: false }
+    });
+
+    const chart = Highcharts.chart('chart-container', {
+      chart: {
+        type: 'area',
+        animation: true
+      },
+      title: { text: null },
+      series: [{
+        name: 'Requests/sec',
+        data: initialData
+      }],
+      tooltip: {
+        valueDecimals: 0,
+        valueSuffix: ' rps',
+        headerFormat: '<span style="font-size: 10px; color: #9ca3af">{point.x:%H:%M:%S}</span><br/>',
+        pointFormat: '<span style="color: #10b981">●</span> <span style="font-weight: 600">{series.name}: </span><span style="font-weight: 600; color: #f3f4f6">{point.y}</span>'
+      }
+    });
+
+    function updateStats(rps, total, peak) {
+      document.getElementById('current-rps').textContent = `${rps.toLocaleString()} rps`;
+
+      // Update peak from backend
+      if (peak !== undefined && peak > peakRps) {
+        peakRps = peak;
+      }
+      if (rps > peakRps) {
+        peakRps = rps;
+      }
+      document.getElementById('peak-rps').textContent = peakRps.toLocaleString();
+
+      // Update total from backend
+      if (total !== undefined) {
+        totalRequests = total;
+      } else {
+        totalRequests += rps;
+      }
+      document.getElementById('total-requests').textContent = totalRequests.toLocaleString();
+
+      rpsValues.push(rps);
+      if (rpsValues.length > maxDataPoints) rpsValues.shift();
+      const avg = Math.round(rpsValues.reduce((a, b) => a + b, 0) / rpsValues.length);
+      document.getElementById('avg-rps').textContent = avg.toLocaleString();
+    }
+
+    async function fetchRpsFromBackend() {
+      try {
+        const response = await fetch('/api/requests', {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+        const data = await response.json();
+        return data;
+      } catch (err) {
+        console.warn('Error fetching from /api/requests', err);
+        return { rps: 0 };
+      }
+    }
+
+    async function update() {
+      const data = await fetchRpsFromBackend();
+      const rps = data.rps || 0;
+      const now = Date.now();
+      chart.series[0].addPoint([now, rps], true, chart.series[0].data.length >= maxDataPoints);
+      updateStats(rps, data.total, data.peak);
+    }
+
+    setInterval(update, 1000);
+
+    document.getElementById('target-link').addEventListener('click', () => {
+      navigator.clipboard.writeText('https://dstats.qzz.io/hit').then(() => {
+        alert('Copied: https://dstats.qzz.io/hit');
+      });
+    });
+  </script>
+</body>
+</html>
